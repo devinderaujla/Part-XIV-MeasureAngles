@@ -12,14 +12,32 @@ By the act of copying, use, setup or assembly, the user accepts all resulting li
 1.0  29 December 2022 -  initial release
 */
 
+// https://www.youtube.com/watch?v=7VW_XVbtu9k
+//#include <I2Cdev.h>
 #include <Wire.h>
+#include <math.h> // Including math.h to round off jumpy angle values - a hack
+//#if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
+//    #include "Wire.h"
+//#endif
 float RateRoll, RatePitch, RateYaw;
 float AccX, AccY, AccZ;
 float AngleRoll, AnglePitch;
 float LoopTimer;
-void gyro_signals(void) {
-  Wire.beginTransmission(0x68);
-  Wire.write(0x1A);
+//float Rar, Rap;
+// ***
+// The code in this is for leds to function, if LEDs are not used, the whole section should/could be commented out
+const int LEVELled = 0;
+const int yawPOled = 2;
+const int yawMIled = 14;
+const int rollPOled = 12;
+const int rollMIled = 13;
+int dutyCycle = 0;
+//
+// ***
+
+void gyro_signals(void){
+  Wire.beginTransmission(0x68); // MPU6050 I2C address
+  Wire.write(0x1A); 
   Wire.write(0x05);
   Wire.endTransmission();
   Wire.beginTransmission(0x68);
@@ -28,50 +46,82 @@ void gyro_signals(void) {
   Wire.endTransmission();
   Wire.beginTransmission(0x68);
   Wire.write(0x3B);
-  Wire.endTransmission(); 
-  Wire.requestFrom(0x68,6);
-  int16_t AccXLSB = Wire.read() << 8 | Wire.read();
-  int16_t AccYLSB = Wire.read() << 8 | Wire.read();
-  int16_t AccZLSB = Wire.read() << 8 | Wire.read();
-  Wire.beginTransmission(0x68);
-  Wire.write(0x1B); 
-  Wire.write(0x8);
-  Wire.endTransmission();                                                   
-  Wire.beginTransmission(0x68);
-  Wire.write(0x43);
   Wire.endTransmission();
-  Wire.requestFrom(0x68,6);
-  int16_t GyroX=Wire.read()<<8 | Wire.read();
-  int16_t GyroY=Wire.read()<<8 | Wire.read();
-  int16_t GyroZ=Wire.read()<<8 | Wire.read();
-  RateRoll=(float)GyroX/65.5;
-  RatePitch=(float)GyroY/65.5;
-  RateYaw=(float)GyroZ/65.5;
-  AccX=(float)AccXLSB/4096;
-  AccY=(float)AccYLSB/4096;
-  AccZ=(float)AccZLSB/4096;
-  AngleRoll=atan(AccY/sqrt(AccX*AccX+AccZ*AccZ))*1/(3.142/180);
-  AnglePitch=-atan(AccX/sqrt(AccY*AccY+AccZ*AccZ))*1/(3.142/180);
+  Wire.requestFrom(0x68,6); // Request 6 bytes of data from MPU6050
+  int16_t AccXLSB = Wire.read() << 8 | Wire.read(); // Read accelerometer X-axis
+  int16_t AccYLSB = Wire.read() << 8 | Wire.read(); // Read accelerometer Y-axis
+  int16_t AccZLSB = Wire.read() << 8 | Wire.read(); // Read accelerometer Z-axis
+  Wire.beginTransmission(0x68);
+  Wire.write(0x1B); // Gyroscope configuration register
+  Wire.write(0x8); // Set full scale range to ±500 degrees/s
+  Wire.endTransmission();
+  Wire.beginTransmission(0x68);
+  Wire.write(0x43); // Gyroscope data register
+  Wire.endTransmission();
+  Wire.requestFrom(0x68,6); // Request 6 bytes of data from MPU6050
+  int16_t GyroX = Wire.read() << 8 | Wire.read()<< 8; // Read gyroscope X-axis
+  int16_t GyroY = Wire.read() << 8 | Wire.read()<< 8; // Read gyroscope Y-axis
+  int16_t GyroZ = Wire.read() << 8 | Wire.read()<< 8; // Read gyroscope Z-axis
+  RateRoll = (float)GyroX / 65.5; // Convert to degrees/s
+  RatePitch = (float)GyroY / 65.5; // Convert to degrees/s
+  RateYaw = (float)GyroZ / 65.5; // Convert to degrees/s
+  AccX = (float)AccXLSB / 4096-0.07; // Convert to physial values in g
+  AccY = (float)AccYLSB / 4096; // Convert to physial values in g
+  AccZ = (float)AccZLSB / 4096+1.83; // Convert to physial values in g
+  AngleRoll = atan(AccY / sqrt(AccX * AccX + AccZ * AccZ))*1/(3.142/180); // Calculate roll angle in degrees
+//if (AngleRoll <= 0.05 || AngleRoll >= -0.05){
+//  AngleRoll = 0.00;
+//}
+//  Rar = round(AngleRoll * 100);
+  AnglePitch = atan(-AccX / sqrt (AccY * AccY + AccZ * AccZ))*1/(3.142/180); // Calculate pitch angle in degrees
+//if (AnglePitch <= 0.05 || AnglePitch >= -0.05 ){
+//  AnglePitch = 0.00;
+//}
+//  Rap = round(AnglePitch * 100);
 }
 void setup() {
-  Serial.begin(57600);
-  pinMode(13, OUTPUT);
-  digitalWrite(13, HIGH);
-  Wire.setClock(400000);
+//  Wire.begin(57600); // Initialize I2C communication
+//#if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
+  Serial.println("If serial output is desired, uncomment the lines 98-99 104-105 in the code");
   Wire.begin();
+  Wire.setClock(400000);
+//#elif I2CDEV_IMPLEMENTATION == I2CDEV_BUILTIN_FASTWIRE
+//  Fastwire::setup(400, true);
+//#endif
+  Serial.begin(115200);
   delay(250);
-  Wire.beginTransmission(0x68); 
-  Wire.write(0x6B);
-  Wire.write(0x00);
+  Wire.beginTransmission(0x68); // MPU6050 I2C address
+  Wire.write(0x6B); // Power management register
+  Wire.write(0x00); // Wake up the MPU6050
   Wire.endTransmission();
 }
 void loop() {
-  gyro_signals();
-  Serial.print("Acceleration X [g]= ");
-  Serial.print(AccX);
-  Serial.print(" Acceleration Y [g]= ");
-  Serial.print(AccY);
-  Serial.print(" Acceleration Z [g]= ");
-  Serial.println(AccZ);
+//***
+// The code in this is for leds to function, if LEDs are not used, the section should/could be commented out  
+  analogWrite(LEVELled, dutyCycle); // setting led off 
+  analogWrite(yawPOled, dutyCycle); // setting led off 
+  analogWrite(yawMIled, dutyCycle); // setting led off
+  analogWrite(rollPOled, dutyCycle); // setting led off
+  analogWrite(rollMIled, dutyCycle); // setting led off
+//
+//***
+
+  gyro_signals(); // Call the function to read gyro and accelerometer data}
+//  Serial.print("Accelometer X [g]: ");
+//  Serial.print(AccX);
+  Serial.print("Roll Angle = "); // This can be re-enabled if serial out is desired
+  Serial.print(AngleRoll); // This can be re-enabled if serial out is desired
+  if (AngleRoll >=0.10){analogWrite(rollPOled, ((int)AngleRoll * 50));} if (AngleRoll <= -0.10){analogWrite(rollMIled, (abs((int)AngleRoll * 50)));} // The code in this is for leds to function, if LEDs are not used, the section should/could be commented out
+//  Serial.print(Rar / 100);
+//  Serial.print(" | Accelometer Y [g]: ");
+//  Serial.print(AccY);
+  Serial.print(" | Pitch Angle = "); // This can be re-enabled if serial out is desired
+  Serial.println(AnglePitch); // This can be re-enabled if serial out is desired
+  if (AnglePitch >=0.10){analogWrite(yawPOled, ((int)AnglePitch * 50));} if (AnglePitch <= -0.10){analogWrite(yawMIled, (abs((int)AnglePitch * 50)));} // The code in this is for leds to function, if LEDs are not used, the section should/could be commented out
+// Setting level led to high if within margin
+  if (AngleRoll < 0.10 && AngleRoll > -0.10){if (AnglePitch < 0.10 && AnglePitch > -0.10){analogWrite(LEVELled, 255);}} // The code in this is for leds to function, if LEDs are not used, the section should/could be commented out
+//  Serial.println(Rap / 100);
+//  Serial.print(" | Accelometer Z [g]: ");
+//  Serial.println(AccZ);
   delay(50);
 }
